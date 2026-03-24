@@ -1,6 +1,3 @@
-# %%
-
-
 
 # ============================================================================
 # Regression Overview — In-Class Live Coding Example
@@ -35,10 +32,13 @@ facebook_metrics = fetch_ucirepo(id=368)
 X = facebook_metrics.data.features.copy()
 y = facebook_metrics.data.targets.copy()
 
+# %%
+X.info()
 
 # %%
 # Combine for easier exploration, using concat to keep features and target together
-df = ...
+df = pd.concat([X, y], axis=1)
+df.head()
 
 # =============================================================================
 # SECTION 1: Kernel Density Plot
@@ -48,12 +48,14 @@ df = ...
 # Use it to understand the shape and spread of a distribution before modeling.
 # %%
 # The raw distribution is heavily right-skewed — a common problem in regression.
-df[
+df["Total Interactions"].plot.kde(color='steelblue')
+plt.title('Kernel Density Plot of Total Interactions')
 
 # %%
 
 # Let's also look at Page total likes
-df[
+df["Page total likes"].plot.kde(color='coral')
+plt.title('Kernel Density Plot of Page Total Likes')
 
 # KEY POINT: Skewed distributions can violate regression assumptions.
 # We'll address this with log/arcsinh transformations in Section 5.
@@ -68,13 +70,15 @@ df[
 # %%
 
 # Value counts
-print(df
+print(df['Type'].value_counts())
+print(df['Category'].value_counts())
+
 
 # %%
 # One-hot encode 'Type' and 'Category' (creates new columns for each level), 
 # replace in the df, using pandas's get_dummies, four attributes, df, columns to encode, 
 # drop_first=True to avoid dummy variable trap, and prefix to add a prefix to the new columns
-df = pd.get_dummies(...
+df = pd.get_dummies(df, columns=['Type', 'Category'], drop_first=True, prefix=['Ty', 'Cat'])
                 
 
 # =============================================================================
@@ -89,18 +93,27 @@ df = pd.get_dummies(...
 df.info()
 
 # %%
-# Simple example: predict Total Interactions from Page total likes
-X_simple = df[  # sklearn expects 2D array for features
-y_target = df[
+# Simple example: predict Total Interactions from Page total likes, convert to numpy arrays, dropna to remove missing values
+X_simple = df['Page total likes'].values.reshape(-1, 1)  # sklearn expects 2D array for features
+y_target = df["Total Interactions"]
 
+# %%
 
 # With intercept (default), fit.intercept=true/false, (then).fit
-model_with = LinearRegression
+model_with = LinearRegression(fit_intercept=True).fit(X_simple, y_target)
 # Without intercept
-model_without = LinearRegression(
+model_without = LinearRegression(fit_intercept=False).fit(X_simple, y_target)
 
-print(coefficients
+# %%
+print(dir(model_with))
 
+# %%
+print(f"With Intercept: Coefficient = {model_with.coef_[0]:.4f}, Intercept = {model_with.intercept_:.2f}, R² = {model_with.score(X_simple, y_target):.4f}")
+
+print(f"Without Intercept: Coefficient = {model_without.coef_[0]:.4f}, R² = {model_without.score(X_simple, y_target):.4f}")
+
+
+# %%
 # KEY POINT: Unless your domain knowledge justifies it, always keep the intercept.
 # Forcing through the origin biases the slope estimate when y != 0 at x=0.
 
@@ -118,33 +131,39 @@ print(coefficients
 # Select a handful of numeric features, that are most correlated with Total Interactions
 # correlation matrix
 
-corr_matrix = df.corr()
+# %% create numeric_features dataframe 
+numeric_features = df.select_dtypes(include=[np.number])
+# %%
+corr_matrix = numeric_features.corr('pearson')
 corr_with_target = corr_matrix['Total Interactions'].abs().sort_values(ascending=False)
 
-
-# visualize the correlations with a matrix plot
-plt.figure(figsize=(8, 6))
-sns.heatmap(corr_matrix[numeric_features + ['Total Interactions']], annot=True, cmap='coolwarm', center=0)
-plt.title('Correlation Matrix')
-plt.show()
+# %%
+corr_with_target.head()
 
 # %%
 # select some kinda middle of the road features
-numeric_features = corr_with_target[5:11].index.tolist()  # Exclude the target variable itself   
+mlr_features = corr_with_target[5:11].index.tolist()  # Exclude the target variable itself   
 
 # now you try pick some real terrible variables and see what happens
 
 # %%
-df_mv = df[numeric_features + ['Total Interactions']].dropna()
+# visualize the correlations with a matrix plot
+sns.heatmap(corr_matrix[mlr_features + ['Total Interactions']], 
+            annot=True, cmap='coolwarm', center=0)
+plt.title('Correlation Matrix')
+plt.show()
 
-X_mv = df_mv[numeric_features]
+# %%
+df_mv = df[mlr_features + ['Total Interactions']]
+
+X_mv = df_mv[mlr_features]
 y_mv = df_mv['Total Interactions']
 
 # %%
 model_mv = LinearRegression().fit(X_mv, y_mv)
 
 
-coef_df = pd.DataFrame({'Feature': numeric_features, 'Coefficient': model_mv.coef_})
+coef_df = pd.DataFrame({'Feature': mlr_features, 'Coefficient': model_mv.coef_})
 print(coef_df.to_string(index=False))
 
 print(f"\nIntercept: {model_mv.intercept_:.2f}")
@@ -161,7 +180,7 @@ print(f"R²: {model_mv.score(X_mv, y_mv):.4f}")
 #   - Reduces the influence of outliers
 #   - Can improve model fit and residual normality
 #
-# log(x):    works only for strictly positive values (x > 0)
+# log(x): works only for strictly positive values (x > 0)
 # arcsinh(x): works for zero and negative values — a generalization of log
 #             arcsinh(x) ≈ log(2x) for large x, but handles 0s gracefully
 
@@ -199,6 +218,7 @@ print(coef_df_trans.to_string(index=False))
 
 print(f"\nIntercept: {model_trans.intercept_:.2f}")
 print(f"R²: {model_trans.score(X_trans, y_trans):.4f}")
+
 
 # =============================================================================
 # SECTION 6: Polynomial Features from sklearn
@@ -259,12 +279,15 @@ for degree in [1, 2, 3]:
 
 # %%
 # Use the same features as the multivariate regression listed in the numeric feature list
-X_final = df[numeric_features].dropna()
+X_final = df[mlr_features].dropna() 
 y_final = df.loc[X_final.index, 'Total Interactions']
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X_final, y_final, test_size=0.2, random_state=42
-)
+    X_final, y_final, test_size=0.2, random_state=42)
+
 model_final = LinearRegression().fit(X_train, y_train)
+
+# %%
 y_pred = model_final.predict(X_test)    
 # True vs. Predicted plot
 plt.figure(figsize=(6, 6))
@@ -288,5 +311,72 @@ print(f"R² Score: {r2:.4f}")
 
 # range of the target variable in the test set
 print(f"Range of Total Interactions in Test Set: {y_test.min()} to {y_test.max()}")
+
+
+
+# %% ######################################################
+# DEMO: When Polynomial Features Make Sense
+# Fabricated example: Facebook-style post engagement by hour of day
+# The true relationship is a curve — linear regression misses it entirely.
+
+np.random.seed(42)
+# --- Fabricate data ---
+# Simulate 200 posts, each posted at a random hour (0–23)
+hours = np.random.uniform(0, 23, 200)
+
+# %%
+# True relationship: engagement peaks around noon (hour 12), low at night
+# This is a downward parabola centered at 12
+true_engagement = -3 * (hours - 12)**2 + 500 + np.random.normal(0, 40, 200)
+true_engagement = np.clip(true_engagement, 0, None)  # no negative interactions
+
+X = hours.reshape(-1, 1)
+y = true_engagement
+
+# %%
+# --- Fit linear model ---
+lin = LinearRegression().fit(X, y)
+y_pred_lin = lin.predict(X)
+
+# --- Fit polynomial (degree 2) model ---
+poly = PolynomialFeatures(degree=2, include_bias=False)
+X_poly = poly.fit_transform(X)
+pol = LinearRegression().fit(X_poly, y)
+y_pred_poly = pol.predict(X_poly)
+
+# %%
+# --- Plot 1: Data + both model fits ---
+hour_range = np.linspace(0, 23, 300).reshape(-1, 1)
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].scatter(hours, y, alpha=0.4, color='steelblue', label='Observed posts')
+axes[0].plot(hour_range, lin.predict(hour_range), color='red', lw=2, label='Linear fit')
+axes[0].plot(hour_range, pol.predict(poly.transform(hour_range)),
+             color='green', lw=2, label='Polynomial fit (degree 2)')
+axes[0].set_xlabel('Post Hour (0 = midnight, 12 = noon)')
+axes[0].set_ylabel('Total Interactions')
+axes[0].set_title('Linear vs. Polynomial Fit')
+axes[0].legend()
+
+
+# --- Plot 2: Residuals — the real diagnostic ---
+# A good fit has residuals scattered randomly around zero (no pattern)
+resid_lin  = y - y_pred_lin
+resid_poly = y - y_pred_poly
+
+axes[1].scatter(y_pred_lin,  resid_lin,  alpha=0.4, color='red',   label='Linear residuals')
+axes[1].scatter(y_pred_poly, resid_poly, alpha=0.4, color='green', label='Poly residuals')
+axes[1].axhline(0, color='black', lw=1, linestyle='--')
+axes[1].set_xlabel('Predicted Values')
+axes[1].set_ylabel('Residuals')
+axes[1].set_title('Residual Plot — Look for the U-shape in linear')
+axes[1].legend()
+
+plt.tight_layout()
+plt.show()
+
+# --- R² comparison ---
+print(f"Linear    R²: {lin.score(X, y):.4f}")
+print(f"Polynomial R²: {pol.score(X_poly, y):.4f}")
 
 # %%
